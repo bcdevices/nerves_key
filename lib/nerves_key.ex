@@ -120,8 +120,7 @@ defmodule NervesKey do
   correct.
 
   This function does it all. It requires the signer's private key so
-  handle that with care. Alternatively, please consider sending a PR
-  for supporting off-device signatures so that HSMs can be used.
+  handle that with care.
   """
   @spec provision(
           ATECC508A.Transport.t(),
@@ -132,10 +131,10 @@ defmodule NervesKey do
   def provision(transport, info, signer_cert, signer_key) do
     check_time()
 
-    :ok = configure(transport)
-    otp_info = OTP.new(info.board_name, info.manufacturer_sn)
-    otp_data = OTP.to_raw(otp_info)
-    :ok = OTP.write(transport, otp_data)
+    case Config.configured?(transport) do
+      {:ok, true} -> {:ok, true} = Config.config_compatible?(transport)
+      _ -> :ok = Config.configure(transport)
+    end
 
     {:ok, device_public_key} = Data.genkey(transport)
     {:ok, device_sn} = Config.device_sn(transport)
@@ -148,6 +147,36 @@ defmodule NervesKey do
         signer_cert,
         signer_key
       )
+
+    :ok = provision_primary_certificate(transport, info, device_cert, signer_cert)
+  end
+
+  @doc """
+  Provision a NervesKey using a signed device cert
+
+  The NervesKey must be configured and the device cert must
+  match the stored private key. This function locks the
+  ATECC508A down, so you'll want to be sure what you pass it is
+  correct.
+  """
+  @spec provision_primary_certificate(
+          ATECC508A.Transport.t(),
+          ProvisioningInfo.t(),
+          X509.Certificate.t(),
+          X509.Certificate.t()
+        ) :: {:error, atom()} | :ok
+  def provision_primary_certificate(transport, info, device_cert, signer_cert) do
+    {:ok, true} = Config.config_compatible?(transport)
+
+    otp_info = OTP.new(info.board_name, info.manufacturer_sn)
+    otp_data = OTP.to_raw(otp_info)
+    :ok = OTP.write(transport, otp_data)
+
+    {:ok, device_sn} = Config.device_sn(transport)
+
+    # Validate the Key
+    device_pub_key = X509.Certificate.public_key(device_cert)
+    {:ok, test_pub_key} = Data.genkey(transport, false)
 
     slot_data = Data.slot_data(device_sn, device_cert, signer_cert)
 
