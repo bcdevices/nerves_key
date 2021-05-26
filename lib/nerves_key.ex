@@ -91,8 +91,9 @@ defmodule NervesKey do
 
   The device must be programmed for this to work.
   """
-  @spec device_cert(ATECC508A.Transport.t(), certificate_pair()) :: X509.Certificate.t()
-  def device_cert(transport, which \\ :primary) do
+  @spec device_cert(ATECC508A.Transport.t(), certificate_pair(), String.t()) ::
+          X509.Certificate.t()
+  def device_cert(transport, which \\ :primary, issuer_rdn \\ "/CN=Signer") do
     {:ok, device_sn} = Config.device_sn(transport)
     {:ok, device_data} = ATECC508A.DataZone.read(transport, Data.device_cert_slot(which))
 
@@ -110,7 +111,7 @@ defmodule NervesKey do
       device_sn: device_sn,
       public_key: public_key_raw,
       template: template,
-      issuer_rdn: X509.RDNSequence.new("/CN=Signer", :otp),
+      issuer_rdn: X509.RDNSequence.new(issuer_rdn, :otp),
       subject_rdn: X509.RDNSequence.new("/CN=" <> serial_number, :otp)
     }
 
@@ -120,8 +121,9 @@ defmodule NervesKey do
   @doc """
   Read the signer certificate from the slot
   """
-  @spec signer_cert(ATECC508A.Transport.t(), certificate_pair()) :: X509.Certificate.t()
-  def signer_cert(transport, which \\ :primary) do
+  @spec signer_cert(ATECC508A.Transport.t(), certificate_pair(), String.t()) ::
+          X509.Certificate.t()
+  def signer_cert(transport, which \\ :primary, issuer_rdn \\ "/CN=Signer") do
     {:ok, signer_data} = ATECC508A.DataZone.read(transport, Data.signer_cert_slot(which))
 
     {:ok, <<signer_public_key_raw::64-bytes, _pad::8-bytes>>} =
@@ -134,8 +136,8 @@ defmodule NervesKey do
       data: signer_data,
       public_key: signer_public_key_raw,
       template: template,
-      issuer_rdn: X509.RDNSequence.new("/CN=Signer", :otp),
-      subject_rdn: X509.RDNSequence.new("/CN=Signer", :otp)
+      issuer_rdn: X509.RDNSequence.new(issuer_rdn, :otp),
+      subject_rdn: X509.RDNSequence.new(issuer_rdn, :otp)
     }
 
     ATECC508A.Certificate.decompress(compressed)
@@ -317,7 +319,9 @@ defmodule NervesKey do
   @spec put_raw_settings(ATECC508A.Transport.t(), binary()) :: :ok
   def put_raw_settings(transport, raw_settings) when is_binary(raw_settings) do
     if byte_size(raw_settings) > @settings_max_length do
-      raise "Settings are too large and won't fit in the NervesKey. The max raw size is #{@settings_max_length}."
+      raise "Settings are too large and won't fit in the NervesKey. The max raw size is #{
+              @settings_max_length
+            }."
     end
 
     padded_settings = pad(raw_settings, @settings_max_length)
